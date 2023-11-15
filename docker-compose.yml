@@ -1,0 +1,85 @@
+version: "2"
+
+networks:
+  default:
+    external:
+      name: cjp-demo-environment
+
+services:
+  
+  proxy:
+    container_name: cjp.local
+    #https://hub.docker.com/_/nginx/
+    image: nginx:1.10-alpine
+    ports:
+      - "80:80"
+      #- "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/logs:/var/log/nginx
+    depends_on: #to force proxy to start after:
+      - cjoc
+      - cje-test
+      - cje-prod
+
+  cjoc:
+    container_name: cjoc
+    #https://hub.docker.com/r/cloudbees/jenkins-operations-center/
+    image: cloudbees/cloudbees-core-oc:2.426.1.2
+    environment:
+      JENKINS_SLAVE_AGENT_PORT: "50000"
+      JENKINS_HA: "false"
+      #https://wiki.jenkins-ci.org/display/JENKINS/Features+controlled+by+system+properties
+      JAVA_OPTS: "
+        -Dhudson.TcpSlaveAgentListener.hostName=cjoc
+        -Dhudson.TcpSlaveAgentListener.port=50000
+        -Dhudson.udp=-1
+        -Dhudson.DNSMultiCast.disabled=true
+        -Djava.awt.headless=true
+        -Dorg.apache.commons.jelly.tags.fmt.timeZone=America/New_York"
+      JENKINS_OPTS: "--prefix=/cjoc"
+    volumes:
+      - ./data/cjoc:/var/jenkins_home
+      - ./data/backups:/backups
+
+  cje-prod:
+    container_name: controller
+    #https://hub.docker.com/r/cloudbees/jenkins-enterprise/
+    image: cloudbees/cloudbees-core-cm:2.426.1.2
+    environment:
+      JENKINS_SLAVE_AGENT_PORT: "50000"
+      JENKINS_HA: "false"
+      JAVA_OPTS: "
+        -Dhudson.TcpSlaveAgentListener.hostName=controller
+        -Dhudson.TcpSlaveAgentListener.port=50000
+        -Dhudson.udp=-1
+        -Dhudson.DNSMultiCast.disabled=true
+        -Djava.awt.headless=true
+        -Dorg.apache.commons.jelly.tags.fmt.timeZone=America/New_York
+        "
+      JENKINS_OPTS: "--prefix=/cje-prod"
+    volumes:
+      - ./data/controller:/var/jenkins_home
+      - ./data/backups:/backups
+    volumes_from:
+      - ssh-agent
+
+  agent:
+    container_name: agent
+    image: cloudbees/cloudbees-core-agent:2.426.1.2
+    #this part is specific to your environment.. see README
+    command: ["${SSH_AGENT_COMMAND}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock #aka "docker socket volume mapping"
+      - ${MAVEN_CACHE} #to persist and share the precious maven cache
+
+  #https://hub.docker.com/r/verb/socat/
+  #clever way to expose host docker engine to internal services
+  docker-service:
+    container_name: docker-service
+    image: verb/socat:alpine
+    command: tcp-listen:2375,reuseaddr,fork unix:/docker.sock
+    expose:
+      - "2375"
+    volumes:
+      - /var/run/docker.sock:/docker.sock
