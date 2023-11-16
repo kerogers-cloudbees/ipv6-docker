@@ -1,13 +1,22 @@
 version: "2"
 
 networks:
-  default:
-    external:
-      name: cjp-demo-environment
+      ip6net:
+        enable_ipv6: true
+        ipam:
+          config:
+            - subnet: "2600:1900:4020:cd9b:0:0:0:0/64"
+        x-service-ipv6: &service-ipv6
+          networks:
+            - ip6net
+          user: "root"
+          cap_add:
+            - NET_ADMIN
 
 services:
   
   proxy:
+    <<: *service-ipv6
     container_name: cjp.local
     #https://hub.docker.com/_/nginx/
     image: nginx:1.10-alpine
@@ -15,14 +24,15 @@ services:
       - "80:80"
       #- "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx.conf:/etc/nginx:ro
       - ./nginx/logs:/var/log/nginx
     depends_on: #to force proxy to start after:
       - cjoc
-      - cje-test
-      - cje-prod
+      - controller 
+      - agent
 
   cjoc:
+    <<: *service-ipv6
     container_name: cjoc
     #https://hub.docker.com/r/cloudbees/jenkins-operations-center/
     image: cloudbees/cloudbees-core-oc:2.426.1.2
@@ -42,7 +52,8 @@ services:
       - ./data/cjoc:/var/jenkins_home
       - ./data/backups:/backups
 
-  cje-prod:
+  controller:
+    <<: *service-ipv6
     container_name: controller
     #https://hub.docker.com/r/cloudbees/jenkins-enterprise/
     image: cloudbees/cloudbees-core-cm:2.426.1.2
@@ -62,16 +73,16 @@ services:
       - ./data/controller:/var/jenkins_home
       - ./data/backups:/backups
     volumes_from:
-      - ssh-agent
+      - agent
 
   agent:
+    <<: *service-ipv6
     container_name: agent
     image: cloudbees/cloudbees-core-agent:2.426.1.2
     #this part is specific to your environment.. see README
     command: ["${SSH_AGENT_COMMAND}"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock #aka "docker socket volume mapping"
-      - ${MAVEN_CACHE} #to persist and share the precious maven cache
 
   #https://hub.docker.com/r/verb/socat/
   #clever way to expose host docker engine to internal services
