@@ -63,6 +63,7 @@
         "rm -f /tmp/apache-maven.tar.gz",
         "ln -s /usr/share/maven/bin/mvn /usr/bin/mvn",
         "/tmp/check-environment.sh"
+        "docker compose up -d"
       ]
     }
   ]
