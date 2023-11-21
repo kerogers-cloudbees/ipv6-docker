@@ -1,4 +1,4 @@
-version: "2"
+version: "3"
 
 networks:
       ip6net:
@@ -13,10 +13,11 @@ networks:
           cap_add:
             - NET_ADMIN
 
+
 services:
   
   proxy:
-    <<: *service-ipv6
+    network_mode: host
     container_name: cjp.local
     #https://hub.docker.com/_/nginx/
     image: nginx:1.10-alpine
@@ -32,9 +33,10 @@ services:
       - agent
 
   cjoc:
-    <<: *service-ipv6
+    user: root
+    network_mode: host
     container_name: cjoc
-    #https://hub.docker.com/r/cloudbees/jenkins-operations-center/
+    #https://hub.docker.com/r/cloudbees/jenkins-operations-center
     image: cloudbees/cloudbees-core-oc:2.426.1.2
     environment:
       JENKINS_SLAVE_AGENT_PORT: "50000"
@@ -47,13 +49,18 @@ services:
         -Dhudson.DNSMultiCast.disabled=true
         -Djava.awt.headless=true
         -Dorg.apache.commons.jelly.tags.fmt.timeZone=America/New_York"
-      JENKINS_OPTS: "--prefix=/cjoc"
+      JENKINS_OPTS: "
+        --prefix=/cjoc
+        "
+    #have to override ENTRYPOINT to set HTTP port
+    command: ["/bin/tini", "--",  "/usr/local/bin/jenkins.sh", "--httpPort=8080"]
     volumes:
       - ./data/cjoc:/var/jenkins_home
       - ./data/backups:/backups
 
   controller:
-    <<: *service-ipv6
+    user: root
+    network_mode: host
     container_name: controller
     #https://hub.docker.com/r/cloudbees/jenkins-enterprise/
     image: cloudbees/cloudbees-core-cm:2.426.1.2
@@ -62,13 +69,17 @@ services:
       JENKINS_HA: "false"
       JAVA_OPTS: "
         -Dhudson.TcpSlaveAgentListener.hostName=controller
-        -Dhudson.TcpSlaveAgentListener.port=50000
+        -Dhudson.TcpSlaveAgentListener.port=50001
         -Dhudson.udp=-1
         -Dhudson.DNSMultiCast.disabled=true
         -Djava.awt.headless=true
         -Dorg.apache.commons.jelly.tags.fmt.timeZone=America/New_York
         "
-      JENKINS_OPTS: "--prefix=/cje-prod"
+      JENKINS_OPTS: "
+        --prefix=/controller
+        "
+    #have to override ENTRYPOINT to set HTTP port
+    command: ["/bin/tini", "--", "/usr/local/bin/jenkins.sh", "--httpPort=8081"]
     volumes:
       - ./data/controller:/var/jenkins_home
       - ./data/backups:/backups
@@ -76,11 +87,9 @@ services:
       - agent
 
   agent:
-    <<: *service-ipv6
+    user: jenkins
     container_name: agent
     image: cloudbees/cloudbees-core-agent:2.426.1.2
-    #this part is specific to your environment.. see README
-    command: ["${SSH_AGENT_COMMAND}"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock #aka "docker socket volume mapping"
 
